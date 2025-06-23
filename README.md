@@ -7,7 +7,7 @@ A Qt GUI application to easily turn a 1.7.10 instance into an lwjgl3ify instance
 - Browse and select Prism Launcher instances folder
 - List all available instances by name
 - Download the latest lwjgl3ify release automatically
-- Extract and install into selected instance with progress tracking
+- Extract into selected instance
 - User-friendly GUI with step-by-step process
 
 ## Requirements
@@ -61,10 +61,10 @@ python lwjgl3ify_installer.py
 
 - **"No instances found"**: Make sure you've selected the correct instances folder
 - **Download fails**: Check your internet connection and firewall settings
-- **Extraction fails**: Ensure the instance folder is writable and not locked by Prism Launcher
+- **Extraction fails**: Ensure the instance folder is writable
 
 ## What is lwjgl3ify?
 
-lwjgl3ify is a mod that updates LWJGL (Lightweight Java Game Library) from version 2 to version 3 in Minecraft, providing better performance and compatibility with modern systems.
+lwjgl3ify is a mod that lets you use modern java versions for Minecraft 1.7.10 by updating LWJGL (Lightweight Java Game Library) from version 2 to version 3, providing better performance and compatibility with modern systems.
 
 Project repository: https://github.com/GTNewHorizons/lwjgl3ify 
