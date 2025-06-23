@@ -11,20 +11,20 @@ import requests
 import zipfile
 import tempfile
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import json
 
 try:
     from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                                 QWidget, QPushButton, QListWidget, QLabel, QFileDialog, 
-                                QMessageBox, QProgressBar, QTextEdit, QListWidgetItem)
+                                QMessageBox, QProgressBar, QTextEdit, QListWidgetItem, QCheckBox)
     from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings
     from PyQt6.QtGui import QFont
 except ImportError:
     try:
         from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                                     QWidget, QPushButton, QListWidget, QLabel, QFileDialog, 
-                                    QMessageBox, QProgressBar, QTextEdit, QListWidgetItem)
+                                    QMessageBox, QProgressBar, QTextEdit, QListWidgetItem, QCheckBox)
         from PyQt5.QtCore import QThread, pyqtSignal, Qt, QSettings
         from PyQt5.QtGui import QFont
     except ImportError:
@@ -148,10 +148,10 @@ class LWJGL3ifyInstaller(QMainWindow):
         # Step 2: Instance list
         layout.addWidget(QLabel("2. Select an instance:"))
         self.instance_list = QListWidget()
-        self.instance_list.itemClicked.connect(self.on_instance_selected)
+        self.instance_list.currentItemChanged.connect(self.on_instance_changed)
         layout.addWidget(self.instance_list)
         
-        # Step 3: Install button
+        # Step 3: Install button and mod checkbox
         step3_layout = QHBoxLayout()
         step3_layout.addWidget(QLabel("3. "))
         self.install_button = QPushButton("Download and Install LWJGL3ify")
@@ -159,6 +159,11 @@ class LWJGL3ifyInstaller(QMainWindow):
         self.install_button.setEnabled(False)
         step3_layout.addWidget(self.install_button)
         layout.addLayout(step3_layout)
+        
+        # Also install mod checkbox
+        self.install_mod_checkbox = QCheckBox("Also install mods (lwjgl3ify, UniMixins, Hodgepodge, GTNHLib)")
+        self.install_mod_checkbox.setChecked(False)  # Unchecked by default
+        layout.addWidget(self.install_mod_checkbox)
         
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -281,14 +286,20 @@ class LWJGL3ifyInstaller(QMainWindow):
             # Fallback to folder name
             return PrismInstance(instance_path, instance_path.name)
     
-    def on_instance_selected(self, item: QListWidgetItem):
-        """Handle instance selection"""
-        self.selected_instance = item.data(Qt.ItemDataRole.UserRole)
-        self.install_button.setEnabled(True)
-        self.log(f"Selected instance: {self.selected_instance.name}")
+    def on_instance_changed(self, current: QListWidgetItem, previous: QListWidgetItem):
+        """Handle instance selection via mouse click or keyboard navigation"""
+        if current:  # Only process if there's a current item
+            self.select_instance(current)
     
-    def get_latest_release_url(self) -> Optional[str]:
-        """Get the latest lwjgl3ify release download URL"""
+    def select_instance(self, item: QListWidgetItem):
+        """Common method to handle instance selection"""
+        if item:
+            self.selected_instance = item.data(Qt.ItemDataRole.UserRole)
+            self.install_button.setEnabled(True)
+            self.log(f"Selected instance: {self.selected_instance.name}")
+    
+    def get_latest_release_url(self) -> Tuple[Optional[str], Optional[str]]:
+        """Get the latest lwjgl3ify release download URL and version"""
         try:
             api_url = "https://api.github.com/repos/GTNewHorizons/lwjgl3ify/releases/latest"
             response = requests.get(api_url)
@@ -301,12 +312,12 @@ class LWJGL3ifyInstaller(QMainWindow):
             download_url = f"https://github.com/GTNewHorizons/lwjgl3ify/releases/download/{tag_name}/lwjgl3ify-{tag_name}-multimc.zip"
             
             self.log(f"Latest version: {tag_name}")
-            return download_url
+            return download_url, tag_name
             
         except Exception as e:
             self.log(f"Error getting latest release: {e}")
             # Fallback to the URL provided in the requirements
-            return "https://github.com/GTNewHorizons/lwjgl3ify/releases/download/2.1.14/lwjgl3ify-2.1.14-multimc.zip"
+            return "https://github.com/GTNewHorizons/lwjgl3ify/releases/download/2.1.14/lwjgl3ify-2.1.14-multimc.zip", "2.1.14"
     
     def install_lwjgl3ify(self):
         """Download and install lwjgl3ify"""
@@ -318,13 +329,16 @@ class LWJGL3ifyInstaller(QMainWindow):
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
         
-        # Get download URL
-        download_url = self.get_latest_release_url()
-        if not download_url:
+        # Get download URL and version
+        download_url, version = self.get_latest_release_url()
+        if not download_url or not version:
             QMessageBox.critical(self, "Error", "Failed to get download URL")
             self.install_button.setEnabled(True)
             self.progress_bar.setVisible(False)
             return
+        
+        # Store version for later use
+        self.current_version = version
         
         # Create temporary file for download
         temp_dir = tempfile.mkdtemp()
@@ -362,6 +376,126 @@ class LWJGL3ifyInstaller(QMainWindow):
     
     def on_extract_finished(self):
         """Handle extraction completion"""
+        self.log("Zip extraction completed!")
+        
+        # Check if we should also install the mod
+        if self.install_mod_checkbox.isChecked():
+            self.log("Also installing mod jar files...")
+            self.download_jar_file()
+        else:
+            self.installation_complete()
+    
+    def download_jar_file(self):
+        """Download and install the jar files to mods folder"""
+        # Find mods folder
+        mods_folder = self.find_mods_folder(self.selected_instance.path)
+        if not mods_folder:
+            self.log("Warning: Could not find or create mods folder. Creating minecraft/mods...")
+            # Create minecraft/mods as fallback
+            minecraft_path = self.selected_instance.path / "minecraft"
+            minecraft_path.mkdir(exist_ok=True)
+            mods_folder = minecraft_path / "mods"
+            mods_folder.mkdir(exist_ok=True)
+        
+        self.log(f"Installing mods to: {mods_folder}")
+        
+        # Collect all downloads
+        self.download_queue = []
+        
+        # lwjgl3ify jar
+        jar_url = self.get_jar_download_url(self.current_version)
+        jar_filename = f"lwjgl3ify-{self.current_version}.jar"
+        jar_path = mods_folder / jar_filename
+        self.download_queue.append((jar_url, str(jar_path), "lwjgl3ify"))
+        
+        # UniMixins
+        unimixins_url, unimixins_filename = self.get_unimixins_latest_release()
+        if unimixins_url and unimixins_filename:
+            unimixins_path = mods_folder / unimixins_filename
+            self.download_queue.append((unimixins_url, str(unimixins_path), "UniMixins"))
+        else:
+            self.log("Warning: Could not get UniMixins download URL")
+        
+        # Hodgepodge
+        hodgepodge_url, hodgepodge_filename = self.get_hodgepodge_latest_release()
+        if hodgepodge_url and hodgepodge_filename:
+            hodgepodge_path = mods_folder / hodgepodge_filename
+            self.download_queue.append((hodgepodge_url, str(hodgepodge_path), "Hodgepodge"))
+        else:
+            self.log("Warning: Could not get Hodgepodge download URL")
+        
+        # GTNHLib
+        gtnhlib_url, gtnhlib_filename = self.get_gtnhlib_latest_release()
+        if gtnhlib_url and gtnhlib_filename:
+            gtnhlib_path = mods_folder / gtnhlib_filename
+            self.download_queue.append((gtnhlib_url, str(gtnhlib_path), "GTNHLib"))
+        else:
+            self.log("Warning: Could not get GTNHLib download URL")
+        
+        # Start downloading
+        self.current_download_index = 0
+        self.failed_downloads = []
+        self.download_next_mod()
+    
+    def download_next_mod(self):
+        """Download the next mod in the queue"""
+        if self.current_download_index >= len(self.download_queue):
+            # All downloads completed
+            self.on_all_mods_downloaded()
+            return
+        
+        download_url, download_path, mod_name = self.download_queue[self.current_download_index]
+        self.log(f"Downloading {mod_name} from: {download_url}")
+        
+        # Start download
+        self.jar_download_thread = DownloadThread(download_url, download_path)
+        self.jar_download_thread.progress.connect(self.on_mod_download_progress)
+        self.jar_download_thread.finished.connect(self.on_mod_download_finished)
+        self.jar_download_thread.error.connect(self.on_mod_download_error)
+        self.jar_download_thread.start()
+    
+    def on_mod_download_progress(self, progress: int):
+        """Handle mod download progress"""
+        # Calculate overall progress across all mods
+        total_mods = len(self.download_queue)
+        current_mod_progress = progress / 100.0
+        overall_progress = (self.current_download_index + current_mod_progress) / total_mods * 100
+        self.progress_bar.setValue(int(overall_progress))
+    
+    def on_mod_download_finished(self, file_path: str):
+        """Handle individual mod download completion"""
+        _, _, mod_name = self.download_queue[self.current_download_index]
+        self.log(f"{mod_name} downloaded to: {file_path}")
+        
+        # Move to next download
+        self.current_download_index += 1
+        self.download_next_mod()
+    
+    def on_mod_download_error(self, error: str):
+        """Handle individual mod download error"""
+        _, _, mod_name = self.download_queue[self.current_download_index]
+        self.log(f"{mod_name} download failed: {error}")
+        self.failed_downloads.append(mod_name)
+        
+        # Move to next download
+        self.current_download_index += 1
+        self.download_next_mod()
+    
+    def on_all_mods_downloaded(self):
+        """Handle completion of all mod downloads"""
+        if self.failed_downloads:
+            failed_list = ", ".join(self.failed_downloads)
+            self.log(f"Some mod downloads failed: {failed_list}")
+            self.log("Note: The main lwjgl3ify installation was successful.")
+            QMessageBox.warning(self, "Partial Success", 
+                               f"LWJGL3ify was installed successfully, but some mod downloads failed:\n{failed_list}\n\nYou can manually download the failed mods if needed.")
+        else:
+            self.log("All mods downloaded successfully!")
+        
+        self.installation_complete()
+    
+    def installation_complete(self):
+        """Complete the installation process"""
         self.log("Installation completed successfully!")
         QMessageBox.information(self, "Success", "LWJGL3ify has been installed successfully!")
         self.install_button.setEnabled(True)
@@ -374,6 +508,121 @@ class LWJGL3ifyInstaller(QMainWindow):
         QMessageBox.critical(self, "Extraction Error", f"Failed to extract lwjgl3ify:\n{error}")
         self.install_button.setEnabled(True)
         self.progress_bar.setVisible(False)
+    
+    def find_mods_folder(self, instance_path: Path) -> Optional[Path]:
+        """Find the mods folder in the instance directory"""
+        # Check for minecraft/mods first, then .minecraft/mods
+        for minecraft_dir in ["minecraft", ".minecraft"]:
+            mods_path = instance_path / minecraft_dir / "mods"
+            if mods_path.exists():
+                return mods_path
+            
+            # If the minecraft directory exists but mods doesn't, create it
+            minecraft_path = instance_path / minecraft_dir
+            if minecraft_path.exists():
+                mods_path.mkdir(exist_ok=True)
+                return mods_path
+        
+        # If neither exists, try to find any directory containing a mods folder
+        try:
+            for item in instance_path.iterdir():
+                if item.is_dir():
+                    mods_path = item / "mods"
+                    if mods_path.exists():
+                        return mods_path
+        except Exception:
+            pass
+        
+        return None
+    
+    def get_jar_download_url(self, version: str) -> str:
+        """Get the jar download URL for the given version"""
+        return f"https://github.com/GTNewHorizons/lwjgl3ify/releases/download/{version}/lwjgl3ify-{version}.jar"
+    
+    def get_unimixins_latest_release(self) -> Tuple[Optional[str], Optional[str]]:
+        """Get the latest UniMixins release download URL and filename"""
+        try:
+            api_url = "https://api.github.com/repos/LegacyModdingMC/UniMixins/releases/latest"
+            response = requests.get(api_url)
+            response.raise_for_status()
+            
+            release_data = response.json()
+            assets = release_data.get('assets', [])
+            
+            # Look for +unimixins-all-{version}.jar pattern (only one dash after -all)
+            for asset in assets:
+                name = asset['name']
+                if (name.startswith('+unimixins-all-') and name.endswith('.jar') and 
+                    name.count('-') == 2):  # +unimixins-all-{version}.jar has exactly 2 dashes
+                    download_url = asset['browser_download_url']
+                    filename = asset['name']
+                    self.log(f"Found UniMixins: {filename}")
+                    return download_url, filename
+            
+            # Fallback: look for any unimixins-all-{version}.jar pattern
+            for asset in assets:
+                name = asset['name']
+                if ('unimixins-all-' in name and name.endswith('.jar') and 
+                    not any(suffix in name.lower() for suffix in ['-dev', '-api', '-sources', '-javadoc'])):
+                    download_url = asset['browser_download_url']
+                    filename = asset['name']
+                    self.log(f"Found UniMixins (fallback): {filename}")
+                    return download_url, filename
+                    
+        except Exception as e:
+            self.log(f"Error getting UniMixins release: {e}")
+        
+        return None, None
+    
+    def get_hodgepodge_latest_release(self) -> Tuple[Optional[str], Optional[str]]:
+        """Get the latest Hodgepodge release download URL and filename"""
+        try:
+            api_url = "https://api.github.com/repos/GTNewHorizons/Hodgepodge/releases/latest"
+            response = requests.get(api_url)
+            response.raise_for_status()
+            
+            release_data = response.json()
+            assets = release_data.get('assets', [])
+            
+            # Look for hodgepodge-{version}.jar pattern (only one dash before version)
+            for asset in assets:
+                name = asset['name']
+                if (name.startswith('hodgepodge-') and name.endswith('.jar') and 
+                    name.count('-') == 1):  # hodgepodge-{version}.jar has exactly 1 dash
+                    download_url = asset['browser_download_url']
+                    filename = asset['name']
+                    self.log(f"Found Hodgepodge: {filename}")
+                    return download_url, filename
+                    
+        except Exception as e:
+            self.log(f"Error getting Hodgepodge release: {e}")
+        
+        return None, None
+    
+    def get_gtnhlib_latest_release(self) -> Tuple[Optional[str], Optional[str]]:
+        """Get the latest GTNHLib release download URL and filename"""
+        try:
+            api_url = "https://api.github.com/repos/GTNewHorizons/GTNHLib/releases/latest"
+            response = requests.get(api_url)
+            response.raise_for_status()
+            
+            release_data = response.json()
+            assets = release_data.get('assets', [])
+            
+            # Look for gtnhlib-{version}.jar pattern (only one dash before version)
+            for asset in assets:
+                name = asset['name']
+                if (name.startswith('gtnhlib-') and name.endswith('.jar') and 
+                    name.count('-') == 1):  # gtnhlib-{version}.jar has exactly 1 dash
+                    download_url = asset['browser_download_url']
+                    filename = asset['name']
+                    self.log(f"Found GTNHLib: {filename}")
+                    return download_url, filename
+                    
+        except Exception as e:
+            self.log(f"Error getting GTNHLib release: {e}")
+        
+        return None, None
 
 
 def main():

@@ -35,19 +35,21 @@ pip install PyQt5 requests
 
 ## Usage
 
-1. Run the installer:
+1. Create 1.7.10 instance with forge in PrismLauncher
+
+2. Run the installer:
 ```bash
 python lwjgl3ify_installer.py
 ```
 
-2. Click "Browse Instances Folder" and select your Prism Launcher instances directory
+3. Click "Browse Instances Folder" and select your Prism Launcher instances directory
    - On Linux: Usually `~/.local/share/PrismLauncher/instances`
    - On Windows: Usually `%APPDATA%\PrismLauncher\instances`
    - On macOS: Usually `~/Library/Application Support/PrismLauncher/instances`
 
-3. Select an instance from the list
+4. Select an instance from the list
 
-4. Click "Download and Install LWJGL3ify" to automatically download the latest version and install it
+5. Click "Download and Install LWJGL3ify" to automatically download the latest version and install it
 
 ## How it works
 
