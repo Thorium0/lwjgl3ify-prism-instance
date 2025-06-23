@@ -1,6 +1,6 @@
 # LWJGL3ify Installer for Prism Launcher
 
-A Qt GUI application to easily turn a 1.7.10 instance into a lwjgl3ify for Prism Launcher.
+A Qt GUI application to easily turn a 1.7.10 instance into an lwjgl3ify instance for Prism Launcher.
 
 ## Features
 
