@@ -7,6 +7,7 @@ A Qt GUI application to easily turn a 1.7.10 instance into an lwjgl3ify instance
 - Browse and select Prism Launcher instances folder
 - List all available instances by name
 - Download the latest lwjgl3ify release automatically
+- Optionally also download and install lwjfl3ify mod and dependencies
 - Extract into selected instance
 - User-friendly GUI with step-by-step process
 
